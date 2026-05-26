@@ -2,14 +2,14 @@
 Backend FastAPI – Cadastro e Validação de Biometria Facial
 =========================================================
 Dependências:
-    pip install fastapi uvicorn face_recognition opencv-python-headless numpy pillow
+    pip install fastapi uvicorn face_recognition opencv-python-headless numpy pillow supabase python-dotenv
 
 Executar:
     uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
 
 import os
-import pickle
+import json
 import base64
 import io
 from datetime import datetime
@@ -22,52 +22,52 @@ from PIL import Image
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
-# ── Inicialização ───────────────────────────────────────────────
+load_dotenv()
+
+# ── Inicialização Supabase ──────────────────────────────────────
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("AVISO: Variáveis de ambiente SUPABASE_URL e SUPABASE_KEY não encontradas no arquivo .env.")
+
+try:
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    else:
+        supabase = None
+except Exception as e:
+    supabase = None
+    print(f"Erro ao inicializar Supabase: {e}")
+
+
+# ── Inicialização FastAPI ───────────────────────────────────────
 app = FastAPI(
-    title="PontoAI – Biometria Facial",
+    title="PontoAI – Biometria Facial com Supabase",
     description="API para cadastro e validação de rostos de colaboradores.",
-    version="1.0.0",
+    version="1.1.0",
 )
 
-# CORS – permitir chamadas do front‑end Vite
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # Em produção, restrinja ao domínio real
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Caminho do banco de rostos local
-DB_PATH = os.path.join(os.path.dirname(__file__), "faces_db.pkl")
-
-
 # ── Helpers ─────────────────────────────────────────────────────
-def _load_db() -> list[dict]:
-    """Carrega o banco de rostos do arquivo .pkl."""
-    if os.path.exists(DB_PATH):
-        with open(DB_PATH, "rb") as f:
-            return pickle.load(f)
-    return []
-
-
-def _save_db(db: list[dict]) -> None:
-    """Salva o banco de rostos no arquivo .pkl."""
-    with open(DB_PATH, "wb") as f:
-        pickle.dump(db, f)
-
 
 def _decode_image(base64_str: str) -> np.ndarray:
-    """Converte base64 (com ou sem header data:image/...) em numpy array RGB."""
-    # Remove o header data:image/xxx;base64, se existir
     if "," in base64_str:
         base64_str = base64_str.split(",", 1)[1]
 
     img_bytes = base64.b64decode(base64_str)
     pil_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     return np.array(pil_image)
-
 
 # ── Schemas ─────────────────────────────────────────────────────
 class CadastroFaceRequest(BaseModel):
@@ -76,150 +76,138 @@ class CadastroFaceRequest(BaseModel):
     cargo: Optional[str] = None
     imagem_base64: str
 
-
 class ValidarFaceRequest(BaseModel):
     imagem_base64: str
-
 
 # ── Rotas ───────────────────────────────────────────────────────
 @app.get("/")
 def health_check():
-    db = _load_db()
+    if not supabase:
+        return {"status": "offline", "mensagem": "Supabase não configurado. Verifique o .env"}
+    
+    try:
+        response = supabase.table("colaboradores").select("id", count="exact").execute()
+        total = response.count
+    except Exception as e:
+        total = 0
+        print(f"Erro ao contar colaboradores: {e}")
+
     return {
         "status": "online",
-        "rostos_cadastrados": len(db),
-        "mensagem": "PontoAI Biometria Facial API",
+        "rostos_cadastrados": total,
+        "mensagem": "PontoAI Biometria Facial API com Supabase",
     }
-
 
 @app.post("/cadastrar_face")
 def cadastrar_face(payload: CadastroFaceRequest):
-    """
-    Recebe imagem base64, extrai o embedding facial e salva no banco local .pkl.
-    """
-    # 1. Decodificar imagem
+    if not supabase:
+         raise HTTPException(status_code=500, detail="Supabase não configurado.")
+
     try:
         img_rgb = _decode_image(payload.imagem_base64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erro ao decodificar imagem: {str(e)}")
 
-    # 2. Localizar rostos na imagem
     face_locations = face_recognition.face_locations(img_rgb, model="hog")
 
     if len(face_locations) == 0:
-        raise HTTPException(
-            status_code=422,
-            detail="Nenhum rosto detectado na imagem. Tire uma foto com boa iluminação e o rosto bem visível.",
-        )
-
+        raise HTTPException(status_code=422, detail="Nenhum rosto detectado na imagem. Tire uma foto com boa iluminação e o rosto bem visível.")
     if len(face_locations) > 1:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Detectados {len(face_locations)} rostos. Envie uma foto com apenas 1 pessoa.",
-        )
+        raise HTTPException(status_code=422, detail=f"Detectados {len(face_locations)} rostos. Envie uma foto com apenas 1 pessoa.")
 
-    # 3. Extrair encoding (embedding de 128 dimensões)
     encodings = face_recognition.face_encodings(img_rgb, known_face_locations=face_locations)
 
     if len(encodings) == 0:
-        raise HTTPException(
-            status_code=422,
-            detail="Não foi possível extrair os pontos faciais. Tente novamente com outra foto.",
-        )
+        raise HTTPException(status_code=422, detail="Não foi possível extrair os pontos faciais. Tente novamente com outra foto.")
 
     face_encoding = encodings[0]
+    
+    # Supabase operations
+    # Ver se cpf ja existe
+    existing = supabase.table("colaboradores").select("*").eq("cpf", payload.cpf).execute()
 
-    # 4. Verificar se já existe cadastro com mesmo CPF
-    db = _load_db()
-    for i, registro in enumerate(db):
-        if registro["cpf"] == payload.cpf:
-            # Atualizar registro existente
-            db[i] = {
-                "nome": payload.nome,
-                "cpf": payload.cpf,
-                "cargo": payload.cargo,
-                "encoding": face_encoding.tolist(),
-                "data_cadastro": datetime.now().isoformat(),
-            }
-            _save_db(db)
-            return {
-                "sucesso": True,
-                "mensagem": f"✅ Biometria de '{payload.nome}' atualizada com sucesso!",
-                "cpf": payload.cpf,
-                "atualizado": True,
-            }
-
-    # 5. Salvar novo registro
-    novo_registro = {
+    registro = {
         "nome": payload.nome,
         "cpf": payload.cpf,
         "cargo": payload.cargo,
-        "encoding": face_encoding.tolist(),
-        "data_cadastro": datetime.now().isoformat(),
+        "encoding": json.dumps(face_encoding.tolist()),  # Save as JSON string
     }
 
-    db.append(novo_registro)
-    _save_db(db)
-
-    return {
-        "sucesso": True,
-        "mensagem": f"✅ Rosto de '{payload.nome}' cadastrado com sucesso!",
-        "cpf": payload.cpf,
-        "total_cadastrados": len(db),
-    }
+    if existing.data and len(existing.data) > 0:
+        # Atualizar
+        try:
+             supabase.table("colaboradores").update(registro).eq("cpf", payload.cpf).execute()
+             return {
+                 "sucesso": True,
+                 "mensagem": f"✅ Biometria de '{payload.nome}' atualizada com sucesso!",
+                 "cpf": payload.cpf,
+                 "atualizado": True,
+             }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erro ao atualizar no Supabase: {str(e)}")
+    else:
+        # Inserir
+        try:
+            supabase.table("colaboradores").insert(registro).execute()
+            return {
+                "sucesso": True,
+                "mensagem": f"✅ Rosto de '{payload.nome}' cadastrado com sucesso no Supabase!",
+                "cpf": payload.cpf,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erro ao inserir no Supabase: {str(e)}")
 
 
 @app.post("/validar_assinatura_facial")
 def validar_assinatura_facial(payload: ValidarFaceRequest):
-    """
-    Recebe imagem base64, extrai o encoding e compara com todos os
-    rostos cadastrados no banco .pkl. Retorna o nome da pessoa se houver match.
-    """
-    # 1. Decodificar imagem
+    if not supabase:
+         raise HTTPException(status_code=500, detail="Supabase não configurado.")
+
     try:
         img_rgb = _decode_image(payload.imagem_base64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erro ao decodificar imagem: {str(e)}")
 
-    # 2. Localizar e encodar rosto
     face_locations = face_recognition.face_locations(img_rgb, model="hog")
 
     if len(face_locations) == 0:
-        raise HTTPException(
-            status_code=422,
-            detail="Nenhum rosto detectado na imagem enviada.",
-        )
+        raise HTTPException(status_code=422, detail="Nenhum rosto detectado na imagem enviada.")
 
     encodings = face_recognition.face_encodings(img_rgb, known_face_locations=face_locations)
 
     if len(encodings) == 0:
-        raise HTTPException(
-            status_code=422,
-            detail="Não foi possível extrair os pontos faciais.",
-        )
+        raise HTTPException(status_code=422, detail="Não foi possível extrair os pontos faciais.")
 
     face_encoding = encodings[0]
 
-    # 3. Carregar banco de rostos
-    db = _load_db()
+    # Carregar banco de rostos do supabase
+    response = supabase.table("colaboradores").select("nome, cpf, encoding").execute()
+    db = response.data
 
-    if len(db) == 0:
-        raise HTTPException(
-            status_code=404,
-            detail="Nenhum rosto cadastrado no banco. Cadastre colaboradores primeiro.",
-        )
+    if not db or len(db) == 0:
+        raise HTTPException(status_code=404, detail="Nenhum rosto cadastrado no banco. Cadastre colaboradores primeiro.")
 
-    # 4. Comparar com todos os rostos cadastrados
-    known_encodings = [np.array(r["encoding"]) for r in db]
-    known_names = [r["nome"] for r in db]
-    known_cpfs = [r["cpf"] for r in db]
+    known_encodings = []
+    known_names = []
+    known_cpfs = []
 
-    # face_distance retorna a distância euclidiana (quanto menor, mais parecido)
+    for r in db:
+        if r.get("encoding"):
+            try:
+                enc = np.array(json.loads(r["encoding"]))
+                known_encodings.append(enc)
+                known_names.append(r["nome"])
+                known_cpfs.append(r["cpf"])
+            except Exception as e:
+                print(f"Erro ao fazer parse do encoding para {r['nome']}: {e}")
+
+    if not known_encodings:
+         raise HTTPException(status_code=500, detail="Nenhum encoding válido encontrado no banco.")
+
     distances = face_recognition.face_distance(known_encodings, face_encoding)
     best_match_idx = int(np.argmin(distances))
     best_distance = float(distances[best_match_idx])
 
-    # Tolerância padrão: 0.6 (menor = mais restrito)
     TOLERANCE = 0.6
 
     if best_distance <= TOLERANCE:
@@ -234,28 +222,21 @@ def validar_assinatura_facial(payload: ValidarFaceRequest):
         return {
             "match": False,
             "nome": None,
-            "mensagem": "Rosto não reconhecido. O colaborador pode não estar cadastrado.",
+            "mensagem": "Rosto não reconhecido. O colaborador não está cadastrado ou a foto está diferente.",
             "melhor_distancia": round(best_distance, 4),
         }
 
-
 @app.get("/listar_cadastros")
 def listar_cadastros():
-    """Lista todos os colaboradores cadastrados (sem os encodings, por performance)."""
-    db = _load_db()
-    return {
-        "total": len(db),
-        "cadastros": [
-            {
-                "nome": r["nome"],
-                "cpf": r["cpf"],
-                "cargo": r.get("cargo"),
-                "data_cadastro": r.get("data_cadastro"),
-            }
-            for r in db
-        ],
-    }
+    if not supabase:
+         raise HTTPException(status_code=500, detail="Supabase não configurado.")
 
+    response = supabase.table("colaboradores").select("nome, cpf, cargo").execute() # Note: removemos created_at caso n exista. Melhor: apenas pegar o que sabemos q vai ter
+    db = response.data
+    return {
+        "total": len(db) if db else 0,
+        "cadastros": db if db else [],
+    }
 
 if __name__ == "__main__":
     import uvicorn

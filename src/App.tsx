@@ -379,7 +379,46 @@ export default function App() {
 
     setIsSubmitting(true);
 
-    try {
+      // ── Validação Biométrica (Confirmar se o encarregado faz parte da empresa) ──
+      try {
+        toast.info('Validando biometria...', { id: 'bio-toast' });
+        const bioResponse = await fetch('http://localhost:8000/validar_assinatura_facial', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imagem_base64: capturedImage }),
+        });
+        
+        if (!bioResponse.ok) {
+           const err = await bioResponse.json().catch(() => null);
+           toast.dismiss('bio-toast');
+           toast.error(err?.detail || 'Erro ao validar biometria no servidor.');
+           setIsSubmitting(false);
+           return;
+        }
+
+        const bioData = await bioResponse.json();
+        toast.dismiss('bio-toast');
+
+        if (!bioData.match) {
+          toast.error('Rosto não reconhecido. O colaborador não faz parte da empresa ou não está cadastrado.', {
+            duration: 6000
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
+        toast.success(`Biometria validada! Olá, ${bioData.nome}`);
+        
+        // Include the validated name in the payload or use it if needed
+        // For now, we just let it proceed since validation passed.
+
+      } catch (e) {
+         toast.dismiss('bio-toast');
+         toast.error('Erro de conexão ao validar biometria. O backend está rodando?');
+         setIsSubmitting(false);
+         return;
+      }
+      
       // NOVO: Gerar o PDF antes de enviar
       toast.info('Construindo PDF oficial...', { id: 'pdf-toast' });
       const pdfFinalBase64 = await gerarAtaPDF(formData, capturedImage as string);
@@ -476,23 +515,12 @@ export default function App() {
 
         {/* Header do Cartão */}
         <div className="mb-10 border-b pb-6 border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-emerald-700 uppercase tracking-wide">
-                Ata de Reunião com Gestor da Unidade
-              </h1>
-              <p className="text-slate-500 mt-2 text-sm">
-                Para garantir o registro oficial, preencha as informações da visita técnica e recolha a assinatura do responsável.
-              </p>
-            </div>
-            <Link
-              to="/cadastro-biometria"
-              className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-xs font-semibold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-md shadow-emerald-600/20 hover:shadow-emerald-600/40 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Shield className="w-4 h-4" />
-              Cadastro Biométrico
-            </Link>
-          </div>
+          <h1 className="text-2xl md:text-3xl font-bold text-emerald-700 uppercase tracking-wide">
+            Ata de Reunião com Gestor da Unidade
+          </h1>
+          <p className="text-slate-500 mt-2 text-sm">
+            Para garantir o registro oficial, preencha as informações da visita técnica e recolha a assinatura do responsável.
+          </p>
         </div>
 
         {/* Status de Localização */}
@@ -865,7 +893,18 @@ export default function App() {
         </section>
 
         {/* Seção 6: Envio */}
-        <section className="mt-12 flex justify-end">
+        <section className="mt-12 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="text-left">
+             <p className="text-sm text-slate-500 mb-2">O colaborador não está cadastrado?</p>
+             <Link
+               to="/cadastro-biometria"
+               className="inline-flex items-center gap-2 px-4 py-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg text-sm font-semibold transition-colors border border-emerald-200"
+             >
+               <Shield className="w-4 h-4" />
+               Fazer Cadastro Biométrico
+             </Link>
+          </div>
+
           <button
             onClick={handleSubmit}
             disabled={isSubmitting}
