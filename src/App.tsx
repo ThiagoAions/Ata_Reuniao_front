@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, MapPin, CheckCircle2, Send, X, Loader2, ClipboardList, UserCheck, Plus, Trash2 } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, Send, X, Loader2, ClipboardList, UserCheck, Plus, Trash2, Shield } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { gerarAtaPDF } from './utils/gerarPdf';
+import { Link } from 'react-router-dom';
 
 interface AssinaturaColaborador {
   id: string;
@@ -475,12 +476,23 @@ export default function App() {
 
         {/* Header do Cartão */}
         <div className="mb-10 border-b pb-6 border-slate-100">
-          <h1 className="text-2xl md:text-3xl font-bold text-emerald-700 uppercase tracking-wide">
-            Ata de Reunião com Gestor da Unidade
-          </h1>
-          <p className="text-slate-500 mt-2 text-sm">
-            Para garantir o registro oficial, preencha as informações da visita técnica e recolha a assinatura do responsável.
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-emerald-700 uppercase tracking-wide">
+                Ata de Reunião com Gestor da Unidade
+              </h1>
+              <p className="text-slate-500 mt-2 text-sm">
+                Para garantir o registro oficial, preencha as informações da visita técnica e recolha a assinatura do responsável.
+              </p>
+            </div>
+            <Link
+              to="/cadastro-biometria"
+              className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-xs font-semibold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-md shadow-emerald-600/20 hover:shadow-emerald-600/40 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Shield className="w-4 h-4" />
+              Cadastro Biométrico
+            </Link>
+          </div>
         </div>
 
         {/* Status de Localização */}
