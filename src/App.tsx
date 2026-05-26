@@ -379,6 +379,7 @@ export default function App() {
 
     setIsSubmitting(true);
 
+    try {
       // ── Validação Biométrica (Confirmar se o encarregado faz parte da empresa) ──
       try {
         toast.info('Validando biometria...', { id: 'bio-toast' });
