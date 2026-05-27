@@ -415,7 +415,7 @@ export default function App() {
       };
 
       // URL de Webhook de Produção do n8n
-      const webhookUrl = 'https://aionscorp-n8n.cloudfy.live/webhook/app-contato';
+      const webhookUrl = 'https://aionscorp-n8n.cloudfy.live/webhook-test/app-contato';
 
       const response = await fetch(webhookUrl, {
         method: 'POST',
@@ -438,7 +438,14 @@ export default function App() {
           setFormResetKey(prev => prev + 1); // Força remount dos canvas
         }, 2000);
       } else {
-        toast.error('Erro ao enviar ata. Verifique o servidor n8n.');
+        try {
+          const errorData = await response.json();
+          toast.error(`Erro: ${errorData.erro || 'Falha ao enviar. Verifique o servidor.'}`, {
+            duration: 6000,
+          });
+        } catch {
+          toast.error('Erro ao enviar ata. Verifique o servidor n8n.');
+        }
       }
     } catch (error) {
       console.error('Erro no envio da ata:', error);

@@ -2,73 +2,170 @@ import jsPDF from 'jspdf';
 import templateP1 from '../assets/template_p1.jpg';
 import templateP2 from '../assets/template_p2.jpg';
 
+// =============================================================================
+// 📐 PDF CALIBRATION CONFIG — EDIT ONLY HERE TO ALIGN FIELDS
+// =============================================================================
+// Coordinate System (jsPDF uses mm from the top-left corner of the page):
+//   X: Increase to move RIGHT  | Decrease to move LEFT   (horizontal axis)
+//   Y: Increase to move DOWN   | Decrease to move UP     (vertical axis)
+//   A4 page = 210mm wide x 297mm tall
+// =============================================================================
+
+const PDF_CONFIG = {
+
+  // ── Global text settings ──────────────────────────────────────────────────
+  font: {
+    family: 'helvetica',
+    style: 'normal',
+    size: 11,             // Change to 10 for smaller text, 12 for bigger
+    color: { r: 0, g: 0, b: 0 }, // RGB black
+  },
+
+  // ── Page dimensions (A4) ──────────────────────────────────────────────────
+  page: {
+    width: 210,
+    height: 297,
+  },
+
+  // ── PAGE 1 FIELDS (calibrated via DragAndDropCalibrator) ────────────────
+  pagina1: {
+
+    // "Unidade / Contrato" — appears right after the "Unidade / Contrato:" label
+    unidade_contrato: {
+      x: 67.7,
+      y: 61.6,
+    },
+
+    // "Data" — appears right after "Data: ___/___/___"
+    data: {
+      x: 39.7,
+      y: 71.1,
+    },
+
+    // "Encarregado / Supervisor" — after the label on the template
+    encarregado: {
+      x: 77.5,
+      y: 80.9,
+    },
+
+    // "Objeto da Visita / Tópicos Abordados"
+    objeto_visita: {
+      x: 19.6,
+      y: 133.3,
+    },
+
+    // "Observações / Descrição da ATA" — multi-line text block
+    observacoes: {
+      x: 20.4,
+      y: 184.1,
+      maxWidth: 170,  // Max paragraph width before automatic line-break (in mm)
+    },
+  },
+
+  // ── PAGE 2 FIELDS (calibrated via DragAndDropCalibrator) ────────────────
+  pagina2: {
+
+    // Biometric photo placement
+    foto_biometria: {
+      x: 91.8,
+      y: 123.8,
+      width: 90,      // Largura da foto (não veio do calibrador — mantido original)
+      height: 67.5,   // Altura da foto (não veio do calibrador — mantido original)
+    },
+
+    // Encarregado name on the signature line
+    assinatura_encarregado: {
+      x: 90.7,
+      y: 201.8,
+    },
+  },
+};
+
+// =============================================================================
+// 📄 PDF GENERATOR FUNCTION
+// =============================================================================
+
 export const gerarAtaPDF = async (formData: any, fotoBase64: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        try {
-            // 1. Instanciar o documento A4
-            const doc = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
+  return new Promise((resolve, reject) => {
+    try {
+      const { font, page, pagina1, pagina2 } = PDF_CONFIG;
 
-            // 2. Adicionar o Fundo da Página 1
-            // (imagem, formato, x, y, largura, altura)
-            doc.addImage(templateP1, 'JPEG', 0, 0, 210, 297);
+      // 1. Create A4 document
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
 
-            // =========================================================================
-            // PÁGINA 1: CALIBRAÇÃO DOS CAMPOS (Ajuste os números abaixo se precisar)
-            // doc.text("Texto", X_Horizontal, Y_Vertical)
-            // =========================================================================
+      // =====================================================================
+      // PAGE 1
+      // =====================================================================
 
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(11);
-            doc.setTextColor(0, 0, 0);
+      // Background template
+      doc.addImage(templateP1, 'JPEG', 0, 0, page.width, page.height);
 
-            // 1. Campo: Unidade / Contrato
-            // Se estiver muito para a esquerda, aumente o X (65). Se estiver muito alto, aumente o Y (72).
-            doc.text(`${formData.unidade} / ${formData.contrato}`, 65, 72); 
+      // Font setup
+      doc.setFont(font.family, font.style);
+      doc.setFontSize(font.size);
+      doc.setTextColor(font.color.r, font.color.g, font.color.b);
 
-            // 2. Campo: Data
-            // Ajuste o X e Y para que fique exatamente ao lado da palavra "Data:" do formulário
-            const dataAta = formData.data_emissao || new Date().toLocaleDateString('pt-BR');
-            doc.text(dataAta, 45, 82); 
+      // Field: Unidade / Contrato
+      doc.text(
+        `${formData.unidade} / ${formData.contrato}`,
+        pagina1.unidade_contrato.x,
+        pagina1.unidade_contrato.y,
+      );
 
-            // 3. Campo: Encarregado/Supervisor
-            doc.text(formData.responsavel, 75, 92); 
+      // Field: Data
+      const dataAta = formData.data_emissao || new Date().toLocaleDateString('pt-BR');
+      doc.text(dataAta, pagina1.data.x, pagina1.data.y);
 
-            // 4. Campo: Tópicos Abordados / Objeto da Visita
-            // Se o texto precisar descer para a linha correta, aumente o 135 para 140, 145...
-            doc.text(formData.objetoVisita, 25, 135); 
+      // Field: Encarregado / Supervisor
+      doc.text(formData.responsavel, pagina1.encarregado.x, pagina1.encarregado.y);
 
-            // 5. Campo: Descrição da ATA / Observações
-            // O '170' é a largura máxima do parágrafo antes de quebrar a linha automaticamente
-            const obsFormatadas = doc.splitTextToSize(formData.observacoes || "Nenhuma observação.", 170);
-            // O '155' é a altura onde o bloco de texto começa a ser escrito
-            doc.text(obsFormatadas, 25, 155); 
+      // Field: Objeto da Visita / Tópicos Abordados
+      doc.text(formData.objetoVisita, pagina1.objeto_visita.x, pagina1.objeto_visita.y);
 
-            // =========================================================================
-            // PÁGINA 2: CALIBRAÇÃO DA FOTO E ASSINATURA
-            // =========================================================================
-            doc.addPage();
-            doc.addImage(templateP2, 'JPEG', 0, 0, 210, 297); // Mantido JPEG para bater com o import
+      // Field: Observações (auto line-wrapping)
+      const obsFormatadas = doc.splitTextToSize(
+        formData.observacoes || 'Nenhuma observação.',
+        pagina1.observacoes.maxWidth,
+      );
+      doc.text(obsFormatadas, pagina1.observacoes.x, pagina1.observacoes.y);
 
-            // Inserir a Foto Biométrica do Colaborador
-            // Se a foto estiver muito grande ou fora de centro:
-            // (imagem, formato, X, Y, Largura, Altura)
-            doc.addImage(fotoBase64, 'JPEG', 60, 45, 90, 67.5);
+      // =====================================================================
+      // PAGE 2
+      // =====================================================================
 
-            // Inserir o Nome do Encarregado na linha de assinatura da página 2
-            // Ajuste o 160 (X) e 210 (Y) para carimbar o nome exatamente sobre a linha de assinatura
-            doc.text(formData.responsavel, 60, 210);
+      doc.addPage();
+      doc.addImage(templateP2, 'JPEG', 0, 0, page.width, page.height);
 
-            // 8. Retornar o PDF em Base64 para o n8n
-            const pdfBase64 = doc.output('datauristring');
-            resolve(pdfBase64);
+      // Biometric photo
+      doc.addImage(
+        fotoBase64,
+        'JPEG',
+        pagina2.foto_biometria.x,
+        pagina2.foto_biometria.y,
+        pagina2.foto_biometria.width,
+        pagina2.foto_biometria.height,
+      );
 
-        } catch (error) {
-            console.error("Erro ao gerar PDF: ", error);
-            reject(error);
-        }
-    });
+      // Signature name
+      doc.setFont(font.family, font.style);
+      doc.setFontSize(font.size);
+      doc.text(
+        formData.responsavel,
+        pagina2.assinatura_encarregado.x,
+        pagina2.assinatura_encarregado.y,
+      );
+
+      // Return PDF as Base64 data-URI string
+      const pdfBase64 = doc.output('datauristring');
+      resolve(pdfBase64);
+
+    } catch (error) {
+      console.error('Erro ao gerar PDF: ', error);
+      reject(error);
+    }
+  });
 };
