@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, MapPin, CheckCircle2, Send, X, Loader2, ClipboardList, UserCheck, Plus, Trash2, Shield } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
-import { gerarAtaPDF } from './utils/gerarPdf';
 import { Link } from 'react-router-dom';
 
 interface AssinaturaColaborador {
@@ -450,11 +449,6 @@ export default function App() {
       
       
       try {
-        // NOVO: Gerar o PDF antes de enviar
-        toast.info('Construindo PDF oficial...', { id: 'pdf-toast' });
-        const pdfFinalBase64 = await gerarAtaPDF(formData, capturedImage as string);
-        toast.dismiss('pdf-toast');
-
       // Montar payload JSON Plano (Flat) exigido pelo n8n
       const payload = {
         contrato: formData.contrato,
@@ -464,7 +458,6 @@ export default function App() {
         gestor_unidade: showGestorFields ? formData.gestorUnidade : null,
         objeto_visita: formData.objetoVisita,
         imagem_base64: capturedImage,
-        pdf_base64: pdfFinalBase64,
         assinatura_cliente_base64: showGestorFields ? assinaturaGestorBase64 : null,
         assinaturas_colaboradores: showColaboradoresFields
           ? formData.assinaturasColaboradores.map(({ id, ...rest }) => rest) // Remove o ID interno
@@ -591,24 +584,49 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-emerald-700 mb-2">Contrato *</label>
-              <input
-                type="text"
+              <select
                 value={formData.contrato}
                 onChange={(e) => handleInputChange('contrato', e.target.value)}
                 className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors outline-none text-slate-800"
-                placeholder="Ex: CT-2026-001"
-              />
+              >
+                <option value="" disabled>Selecione...</option>
+                <option value="SEDUC">SEDUC</option>
+                <option value="SEMSA">SEMSA</option>
+                <option value="DETRAN">DETRAN</option>
+                <option value="TRE">TRE</option>
+                <option value="GASTRONOΜΙΑ">GASTRONOΜΙΑ</option>
+              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-emerald-700 mb-2">Unidade *</label>
-              <input
-                type="text"
+              <select
                 value={formData.unidade}
                 onChange={(e) => handleInputChange('unidade', e.target.value)}
                 className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors outline-none text-slate-800"
-                placeholder="Ex: Shopping Centro"
-              />
+              >
+                <option value="" disabled>Selecione...</option>
+                <option value="ALVORADA">ALVORADA</option>
+                <option value="AMELIA BITTENCOURT">AMELIA BITTENCOURT</option>
+                <option value="ANEXO I">ANEXO I</option>
+                <option value="ANEXO ROSINA">ANEXO ROSINA</option>
+                <option value="ANTONIO NUNES JIMENEZ">ANTONIO NUNES JIMENEZ</option>
+                <option value="CEDV">CEDV</option>
+                <option value="CIDADE LESTE">CIDADE LESTE</option>
+                <option value="COMPENSA">COMPENSA</option>
+                <option value="CTDV">CTDV</option>
+                <option value="DETRAN - SEDE">DETRAN - SEDE</option>
+                <option value="FÓRUM ELEITORAL">FÓRUM ELEITORAL</option>
+                <option value="GASTROΝΟΜΙΑ">GASTROΝΟΜΙΑ</option>
+                <option value="HUMAITÁ">HUMAITÁ</option>
+                <option value="LUIS MONTENEGRO">LUIS MONTENEGRO</option>
+                <option value="PQ 10 MALL">PQ 10 MALL</option>
+                <option value="SEDE ANTIGA">SEDE ANTIGA</option>
+                <option value="SEDUC- SEDE">SEDUC- SEDE</option>
+                <option value="SEMSA-SEDE">SEMSA-SEDE</option>
+                <option value="VIA NORTE">VIA NORTE</option>
+                {/* Adicione outras unidades aqui conforme necessário */}
+              </select>
             </div>
 
             <div>
