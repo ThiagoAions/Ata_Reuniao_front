@@ -196,6 +196,7 @@ export default function App() {
   // Estado da câmera
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [recognizedName, setRecognizedName] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -288,7 +289,7 @@ export default function App() {
     setIsCameraOpen(false);
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -302,7 +303,35 @@ export default function App() {
         const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
         setCapturedImage(imageBase64);
         closeCamera();
-        toast.success('Foto capturada com sucesso!');
+        
+        // Faz a validacao instantanea para dar feedback imediato
+        toast.info('Analisando rosto...', { id: 'live-bio-toast' });
+        try {
+          const bioResponse = await fetch('http://localhost:7860/validar_face_simples', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imagem_base64: imageBase64 }),
+          });
+          
+          if (bioResponse.ok) {
+            const bioData = await bioResponse.json();
+            if (bioData.match) {
+              setRecognizedName(bioData.nome);
+              toast.success(`Rosto identificado: ${bioData.nome}`, { id: 'live-bio-toast' });
+            } else {
+              setRecognizedName(null);
+              toast.error('Rosto desconhecido. Verifique o enquadramento ou faca o cadastro.', { id: 'live-bio-toast', duration: 6000 });
+            }
+          } else {
+            setRecognizedName(null);
+            toast.dismiss('live-bio-toast');
+            toast.error('Erro ao conectar com a IA.', { id: 'live-bio-toast' });
+          }
+        } catch {
+          setRecognizedName(null);
+          toast.dismiss('live-bio-toast');
+          toast.error('Erro de conexao. O backend da IA esta rodando?', { id: 'live-bio-toast' });
+        }
       }
     }
   };
@@ -382,7 +411,7 @@ export default function App() {
       // ── Validação Biométrica (Confirmar se o encarregado faz parte da empresa) ──
       try {
         toast.info('Validando biometria...', { id: 'bio-toast' });
-        const bioResponse = await fetch('http://localhost:8000/validar_assinatura_facial', {
+        const bioResponse = await fetch('http://localhost:7860/validar_face_simples', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imagem_base64: capturedImage }),
@@ -419,10 +448,12 @@ export default function App() {
          return;
       }
       
-      // NOVO: Gerar o PDF antes de enviar
-      toast.info('Construindo PDF oficial...', { id: 'pdf-toast' });
-      const pdfFinalBase64 = await gerarAtaPDF(formData, capturedImage as string);
-      toast.dismiss('pdf-toast');
+      
+      try {
+        // NOVO: Gerar o PDF antes de enviar
+        toast.info('Construindo PDF oficial...', { id: 'pdf-toast' });
+        const pdfFinalBase64 = await gerarAtaPDF(formData, capturedImage as string);
+        toast.dismiss('pdf-toast');
 
       // Montar payload JSON Plano (Flat) exigido pelo n8n
       const payload = {
@@ -850,6 +881,15 @@ export default function App() {
                   playsInline
                   className="absolute inset-0 w-full h-full object-cover"
                 />
+
+                {/* Overlay guia facial */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-48 h-60 border-2 border-white/40 rounded-[40%] animate-pulse" />
+                </div>
+                <p className="absolute top-4 left-0 right-0 text-center text-white/80 text-xs font-medium bg-black/30 py-2">
+                  Centralize o rosto dentro da guia oval
+                </p>
+
                 <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
                   <div className="flex gap-3 justify-center">
                     <button
@@ -887,10 +927,17 @@ export default function App() {
                   </button>
                 </div>
                 <div className="mt-3 text-center">
-                  <p className="text-sm font-medium text-emerald-600 flex items-center justify-center gap-1">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Biometria Pronta
-                  </p>
+                  {recognizedName ? (
+                    <p className="text-sm font-medium text-emerald-600 flex items-center justify-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Identificado: {recognizedName}
+                    </p>
+                  ) : (
+                    <p className="text-sm font-medium text-amber-600 flex items-center justify-center gap-1">
+                      <X className="w-4 h-4" />
+                      Rosto Nao Reconhecido
+                    </p>
+                  )}
                 </div>
               </div>
             )}

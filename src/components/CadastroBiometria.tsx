@@ -108,7 +108,7 @@ export default function CadastroBiometria() {
   };
 
   const handleSubmit = async () => {
-    // Validações
+    // Validações locais
     if (!formData.nome.trim()) {
       toast.error('Preencha o nome do colaborador');
       return;
@@ -129,6 +129,33 @@ export default function CadastroBiometria() {
     setIsSubmitting(true);
 
     try {
+      // 1. Verificação de Qualidade do Rosto
+      toast.info('Verificando qualidade da foto...', { id: 'cadastro-toast' });
+      const verifyResponse = await fetch('http://localhost:7860/verificar_rosto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imagem_base64: capturedImage }),
+      });
+
+      if (!verifyResponse.ok) {
+        toast.error('Erro ao verificar a foto no servidor.', { id: 'cadastro-toast' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const verifyData = await verifyResponse.json();
+      
+      if (!verifyData.rosto_detectado || verifyData.qualidade === 'ruim') {
+        toast.error(verifyData.mensagem || 'Foto inválida. Tire outra foto.', { 
+          id: 'cadastro-toast',
+          duration: 6000 
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Cadastro Real
+      toast.loading('Salvando e treinando IA...', { id: 'cadastro-toast' });
       const payload = {
         nome: formData.nome.trim(),
         cargo: formData.cargo.trim(),
@@ -136,29 +163,26 @@ export default function CadastroBiometria() {
         imagem_base64: capturedImage,
       };
 
-      // Endpoint do backend FastAPI
-      const backendUrl = 'http://localhost:8000/cadastrar_face';
-
+      const backendUrl = 'http://localhost:7860/cadastrar_face';
       const response = await fetch(backendUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (response.ok) {
         const data = await response.json();
         toast.success(data.mensagem || '✅ Rosto cadastrado com sucesso!', {
+          id: 'cadastro-toast',
           duration: 5000,
         });
         setIsSuccess(true);
       } else {
         const errorData = await response.json().catch(() => null);
-        toast.error(errorData?.detail || 'Erro ao cadastrar rosto. Verifique o servidor.');
+        toast.error(errorData?.detail || 'Erro ao cadastrar rosto.', { id: 'cadastro-toast' });
       }
     } catch {
-      toast.error('Não foi possível conectar ao servidor. Verifique se o backend está rodando em localhost:8000');
+      toast.error('Não foi possível conectar ao servidor. Verifique se o backend está rodando na porta 7860.', { id: 'cadastro-toast' });
     } finally {
       setIsSubmitting(false);
     }
