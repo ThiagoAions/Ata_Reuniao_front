@@ -407,6 +407,8 @@ export default function App() {
 
     setIsSubmitting(true);
 
+    let nomeIdentificado: string | null = null;
+
       // ── Validação Biométrica (Confirmar se o encarregado faz parte da empresa) ──
       try {
         toast.info('Validando biometria...', { id: 'bio-toast' });
@@ -435,10 +437,8 @@ export default function App() {
           return;
         }
 
+        nomeIdentificado = bioData.nome;
         toast.success(`Biometria validada! Olá, ${bioData.nome}`);
-        
-        // Include the validated name in the payload or use it if needed
-        // For now, we just let it proceed since validation passed.
 
       } catch (e) {
          toast.dismiss('bio-toast');
@@ -475,7 +475,10 @@ export default function App() {
         topicos_abordados: isAtaColaboradores ? formData.topicosAbordados : null,
         acao_tomada: showGestorFields ? formData.acaoTomada : null,
         responsavel_acao: showGestorFields ? formData.responsavelAcao : null,
-        prazo_acao: showGestorFields ? formData.prazoAcao : null
+        prazo_acao: showGestorFields ? formData.prazoAcao : null,
+        // Biometria já validada localmente — evita re-validação pelo n8n
+        biometria_validada: true,
+        nome_identificado: nomeIdentificado,
       };
 
       // URL de Webhook de Produção do n8n
