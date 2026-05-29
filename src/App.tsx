@@ -479,7 +479,7 @@ export default function App() {
       };
 
       // URL de Webhook de Produção do n8n
-      const webhookUrl = 'https://aionscorp-n8n.cloudfy.live/webhook-test/app-contato';
+      const webhookUrl = 'https://aionscorp-n8n.cloudfy.live/webhook/app-contato';
 
       const response = await fetch(webhookUrl, {
         method: 'POST',
