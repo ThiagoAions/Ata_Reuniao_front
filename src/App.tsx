@@ -10,6 +10,21 @@ interface AssinaturaColaborador {
   fotoBase64: string | null;
   nomeIdentificado: string | null;
   bioValidada: boolean;
+  hash: string | null;
+}
+
+// Gera um hash de aprovação local para o colaborador (SHA-256 via Web Crypto API)
+async function generateColabHash(nome: string): Promise<string> {
+  const ts = new Date().toISOString();
+  const raw = `COLAB-${nome}-${ts}`;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(raw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const shortHash = hashHex.substring(0, 8).toUpperCase();
+  const dateTag = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `COLAB-${dateTag}-${shortHash}`;
 }
 
 interface FormData {
@@ -369,7 +384,7 @@ export default function App() {
       ...prev,
       assinaturasColaboradores: [
         ...prev.assinaturasColaboradores,
-        { id: Math.random().toString(36).substring(2, 9), nome: '', assinaturaBase64: null, fotoBase64: null, nomeIdentificado: null, bioValidada: false }
+        { id: Math.random().toString(36).substring(2, 9), nome: '', assinaturaBase64: null, fotoBase64: null, nomeIdentificado: null, bioValidada: false, hash: null }
       ]
     }));
   };
@@ -391,7 +406,7 @@ export default function App() {
     }));
   };
 
-  const updateColaboradorBio = (id: string, data: { fotoBase64?: string | null; nomeIdentificado?: string | null; bioValidada?: boolean }) => {
+  const updateColaboradorBio = (id: string, data: { fotoBase64?: string | null; nomeIdentificado?: string | null; bioValidada?: boolean; hash?: string | null }) => {
     setFormData(prev => ({
       ...prev,
       assinaturasColaboradores: prev.assinaturasColaboradores.map(c =>
@@ -451,7 +466,9 @@ export default function App() {
           if (bioResponse.ok) {
             const bioData = await bioResponse.json();
             if (bioData.match) {
-              updateColaboradorBio(colabId, { fotoBase64: imageBase64, nomeIdentificado: bioData.nome, bioValidada: true });
+              // Gera hash de aprovação local para o colaborador (usado pelo n8n no PDF)
+              const colabHash = await generateColabHash(bioData.nome);
+              updateColaboradorBio(colabId, { fotoBase64: imageBase64, nomeIdentificado: bioData.nome, bioValidada: true, hash: colabHash });
               toast.success(`Colaborador identificado: ${bioData.nome}`, { id: toastId });
             } else {
               toast.error('Rosto não reconhecido. Faça o Cadastro Biométrico primeiro.', { id: toastId, duration: 6000 });
@@ -469,7 +486,7 @@ export default function App() {
   };
 
   const clearColabPhoto = (colabId: string) => {
-    updateColaboradorBio(colabId, { fotoBase64: null, nomeIdentificado: null, bioValidada: false });
+    updateColaboradorBio(colabId, { fotoBase64: null, nomeIdentificado: null, bioValidada: false, hash: null });
   };
 
   const handleSubmit = async () => {
@@ -573,10 +590,10 @@ export default function App() {
         assinaturas_colaboradores: showColaboradoresFields
           ? formData.assinaturasColaboradores.map(c => ({
               nome: c.nome,
+              hash: c.hash || '-',
               assinaturaBase64: c.assinaturaBase64,
               fotoBase64: c.fotoBase64,
               nomeIdentificado: c.nomeIdentificado,
-              hash_protocolo: null,
               bioValidada: c.bioValidada,
             }))
           : [],
