@@ -346,7 +346,7 @@ export default function App() {
         // Faz a validacao instantanea para dar feedback imediato
         toast.info('Analisando rosto...', { id: 'live-bio-toast' });
         try {
-          const bioResponse = await fetch('http://localhost:7860/validar_face_simples', {
+          const bioResponse = await fetch('https://thiago2005-ata-facial-api.hf.space/validar_face_simples', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imagem_base64: imageBase64 }),
@@ -457,7 +457,7 @@ export default function App() {
         const toastId = `bio-colab-${colabId}`;
         toast.info('Analisando rosto do colaborador...', { id: toastId });
         try {
-          const bioResponse = await fetch('http://localhost:7860/validar_face_simples', {
+          const bioResponse = await fetch('https://thiago2005-ata-facial-api.hf.space/validar_face_simples', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imagem_base64: imageBase64 }),
@@ -540,7 +540,7 @@ export default function App() {
       // ── Validação Biométrica (Confirmar se o encarregado faz parte da empresa) ──
       try {
         toast.info('Validando biometria...', { id: 'bio-toast' });
-        const bioResponse = await fetch('http://localhost:7860/validar_face_simples', {
+        const bioResponse = await fetch('https://thiago2005-ata-facial-api.hf.space/validar_face_simples', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imagem_base64: capturedImage }),
