@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, CheckCircle2, X, Loader2, UserPlus, Shield, Scan, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Camera, CheckCircle2, Loader2, UserPlus, Shield, Scan, ArrowLeft, RefreshCw } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { Link } from 'react-router-dom';
 

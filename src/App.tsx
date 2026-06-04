@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, MapPin, CheckCircle2, Send, X, Loader2, ClipboardList, UserCheck, Plus, Trash2, Shield } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, X, Loader2, UserCheck, Plus, Trash2, Shield } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { Link } from 'react-router-dom';
 
@@ -7,6 +7,9 @@ interface AssinaturaColaborador {
   id: string;
   nome: string;
   assinaturaBase64: string | null;
+  fotoBase64: string | null;
+  nomeIdentificado: string | null;
+  bioValidada: boolean;
 }
 
 interface FormData {
@@ -192,13 +195,19 @@ export default function App() {
   const [assinaturaGestorBase64, setAssinaturaGestorBase64] = useState<string | null>(null);
   const [formResetKey, setFormResetKey] = useState(0); // Para forçar o re-render dos canvas no reset
 
-  // Estado da câmera
+  // Estado da câmera do encarregado
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [recognizedName, setRecognizedName] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Estado da câmera dos colaboradores (mesmo padrão do encarregado)
+  const [colabCameraId, setColabCameraId] = useState<string | null>(null);
+  const [colabStream, setColabStream] = useState<MediaStream | null>(null);
+  const colabVideoRef = useRef<HTMLVideoElement>(null);
+  const colabCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Estado da localização
   const [location, setLocation] = useState<Location>({
@@ -235,6 +244,22 @@ export default function App() {
       videoRef.current.srcObject = stream;
     }
   }, [isCameraOpen, stream]);
+
+  // Cleanup da câmera do colaborador
+  useEffect(() => {
+    return () => {
+      if (colabStream) {
+        colabStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [colabStream]);
+
+  // Ligar a stream do colaborador ao video element
+  useEffect(() => {
+    if (colabCameraId && colabVideoRef.current && colabStream) {
+      colabVideoRef.current.srcObject = colabStream;
+    }
+  }, [colabCameraId, colabStream]);
 
   const captureLocation = () => {
     setLocationStatus('loading');
@@ -344,12 +369,13 @@ export default function App() {
       ...prev,
       assinaturasColaboradores: [
         ...prev.assinaturasColaboradores,
-        { id: Math.random().toString(36).substring(2, 9), nome: '', assinaturaBase64: null }
+        { id: Math.random().toString(36).substring(2, 9), nome: '', assinaturaBase64: null, fotoBase64: null, nomeIdentificado: null, bioValidada: false }
       ]
     }));
   };
 
   const removeColaborador = (id: string) => {
+    if (colabCameraId === id) closeColabCamera();
     setFormData(prev => ({
       ...prev,
       assinaturasColaboradores: prev.assinaturasColaboradores.filter(c => c.id !== id)
@@ -363,6 +389,87 @@ export default function App() {
         c.id === id ? { ...c, [field]: value } : c
       )
     }));
+  };
+
+  const updateColaboradorBio = (id: string, data: { fotoBase64?: string | null; nomeIdentificado?: string | null; bioValidada?: boolean }) => {
+    setFormData(prev => ({
+      ...prev,
+      assinaturasColaboradores: prev.assinaturasColaboradores.map(c =>
+        c.id === id ? { ...c, ...data } : c
+      )
+    }));
+  };
+
+  // ── Câmera para Biometria dos Colaboradores (mesmo padrão do encarregado) ──
+  const openColabCamera = async (colabId: string) => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 1280, height: 720 },
+        audio: false,
+      });
+      setColabStream(mediaStream);
+      setColabCameraId(colabId);
+    } catch (error) {
+      toast.error('Erro ao acessar câmera. Permita o acesso para continuar.');
+      console.error('Erro ao acessar câmera:', error);
+    }
+  };
+
+  const closeColabCamera = () => {
+    if (colabStream) {
+      colabStream.getTracks().forEach(track => track.stop());
+      setColabStream(null);
+    }
+    setColabCameraId(null);
+  };
+
+  const captureColabPhoto = async (colabId: string) => {
+    if (colabVideoRef.current && colabCanvasRef.current) {
+      const video = colabVideoRef.current;
+      const canvas = colabCanvasRef.current;
+      const context = canvas.getContext('2d');
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+        closeColabCamera();
+        updateColaboradorBio(colabId, { fotoBase64: imageBase64, nomeIdentificado: null, bioValidada: false });
+
+        // Validação facial (mesmo padrão do encarregado)
+        const toastId = `bio-colab-${colabId}`;
+        toast.info('Analisando rosto do colaborador...', { id: toastId });
+        try {
+          const bioResponse = await fetch('http://localhost:7860/validar_face_simples', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imagem_base64: imageBase64 }),
+          });
+
+          if (bioResponse.ok) {
+            const bioData = await bioResponse.json();
+            if (bioData.match) {
+              updateColaboradorBio(colabId, { fotoBase64: imageBase64, nomeIdentificado: bioData.nome, bioValidada: true });
+              toast.success(`Colaborador identificado: ${bioData.nome}`, { id: toastId });
+            } else {
+              toast.error('Rosto não reconhecido. Faça o Cadastro Biométrico primeiro.', { id: toastId, duration: 6000 });
+            }
+          } else {
+            toast.dismiss(toastId);
+            toast.error('Erro ao conectar com a IA.', { id: toastId });
+          }
+        } catch {
+          toast.dismiss(toastId);
+          toast.error('Erro de conexão. O backend da IA está rodando?', { id: toastId });
+        }
+      }
+    }
+  };
+
+  const clearColabPhoto = (colabId: string) => {
+    updateColaboradorBio(colabId, { fotoBase64: null, nomeIdentificado: null, bioValidada: false });
   };
 
   const handleSubmit = async () => {
@@ -395,6 +502,10 @@ export default function App() {
       for (const colab of formData.assinaturasColaboradores) {
         if (!colab.nome || !colab.assinaturaBase64) {
           toast.error('Preencha o nome e a assinatura de todos os colaboradores adicionados');
+          return;
+        }
+        if (!colab.bioValidada) {
+          toast.error(`Atenção: O colaborador "${colab.nome || 'sem nome'}" deve realizar a validação facial antes do envio.`);
           return;
         }
       }
@@ -460,7 +571,14 @@ export default function App() {
         imagem_base64: capturedImage,
         assinatura_cliente_base64: showGestorFields ? assinaturaGestorBase64 : null,
         assinaturas_colaboradores: showColaboradoresFields
-          ? formData.assinaturasColaboradores.map(({ id, ...rest }) => rest) // Remove o ID interno
+          ? formData.assinaturasColaboradores.map(c => ({
+              nome: c.nome,
+              assinaturaBase64: c.assinaturaBase64,
+              fotoBase64: c.fotoBase64,
+              nomeIdentificado: c.nomeIdentificado,
+              hash_protocolo: null,
+              bioValidada: c.bioValidada,
+            }))
           : [],
         latitude: location.latitude,
         longitude: location.longitude,
@@ -481,8 +599,8 @@ export default function App() {
         nome_identificado: nomeIdentificado,
       };
 
-      // URL de Webhook de Produção do n8n
-      const webhookUrl = 'https://aionscorp-n8n.cloudfy.live/webhook/app-contato';
+      // URL de Webhook de Produção/Teste do n8n
+      const webhookUrl = 'https://aionscorp-n8n.cloudfy.live/webhook-test/app-contato';
 
       const response = await fetch(webhookUrl, {
         method: 'POST',
@@ -568,7 +686,7 @@ export default function App() {
               {locationStatus === 'loading' && (
                 <p className="text-xs text-slate-500 animate-pulse">Procurando satélites...</p>
               )}
-              {locationStatus === 'success' && location.latitude && (
+              {locationStatus === 'success' && location.latitude !== null && location.longitude !== null && (
                 <p className="text-xs font-medium text-emerald-600">
                   ✓ Lat: {location.latitude.toFixed(5)} • Lon: {location.longitude.toFixed(5)}
                 </p>
@@ -865,6 +983,89 @@ export default function App() {
                         label="Assinatura do Colaborador:"
                         onSign={(b64) => updateColaborador(colab.id, 'assinaturaBase64', b64)}
                       />
+
+                      {/* Validação Facial do Colaborador */}
+                      <div className="mt-4 space-y-3">
+                        <p className="text-sm font-medium text-slate-600 flex items-center gap-2">
+                          <Camera className="w-4 h-4" />
+                          Validação Facial do Colaborador:
+                        </p>
+
+                        {!colab.fotoBase64 && colabCameraId !== colab.id && (
+                          <div className="bg-white border border-dashed border-slate-300 rounded-md p-5 text-center">
+                            <UserCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                            <p className="text-xs text-slate-400 mb-3">Escaneie o rosto para validar a identidade</p>
+                            <button
+                              type="button"
+                              onClick={() => openColabCamera(colab.id)}
+                              className="bg-white border border-slate-300 text-slate-700 py-2 px-4 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 mx-auto"
+                            >
+                              <Camera className="w-4 h-4" />
+                              Escanear Rosto
+                            </button>
+                          </div>
+                        )}
+
+                        {colabCameraId === colab.id && (
+                          <div className="relative bg-black rounded-md overflow-hidden aspect-video min-h-[220px] flex items-center justify-center">
+                            <video ref={colabVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-36 h-44 border-2 border-white/40 rounded-[40%] animate-pulse" />
+                            </div>
+                            <p className="absolute top-3 left-0 right-0 text-center text-white/80 text-xs font-medium bg-black/30 py-1.5">
+                              Centralize o rosto do colaborador
+                            </p>
+                            <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+                              <div className="flex gap-2 justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => captureColabPhoto(colab.id)}
+                                  className="bg-blue-600 text-white py-2 px-4 rounded-md font-medium text-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  Capturar Foto
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={closeColabCamera}
+                                  className="bg-slate-700 text-white py-2 px-3 rounded-md font-medium text-sm hover:bg-slate-600 transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {colab.fotoBase64 && colabCameraId !== colab.id && (
+                          <div className="relative max-w-[200px] mx-auto">
+                            <img src={colab.fotoBase64} alt="Foto do colaborador" className="w-full rounded-md border border-slate-200 object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => clearColabPhoto(colab.id)}
+                              className="absolute top-1 right-1 bg-white/90 text-slate-700 p-1.5 rounded-md shadow hover:bg-white transition-colors"
+                              title="Refazer foto"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                            <div className="mt-2 text-center">
+                              {colab.bioValidada && colab.nomeIdentificado ? (
+                                <p className="text-xs font-medium text-emerald-600 flex items-center justify-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Identificado: {colab.nomeIdentificado}
+                                </p>
+                              ) : (
+                                <p className="text-xs font-medium text-red-500 flex items-center justify-center gap-1">
+                                  <X className="w-3.5 h-3.5" />
+                                  Não reconhecido — faça o Cadastro Biométrico
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <canvas ref={colabCanvasRef} className="hidden" />
+                      </div>
                     </div>
                   ))}
                 </div>
