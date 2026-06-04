@@ -131,7 +131,7 @@ export default function CadastroBiometria() {
     try {
       // 1. Verificação de Qualidade do Rosto
       toast.info('Verificando qualidade da foto...', { id: 'cadastro-toast' });
-      const verifyResponse = await fetch('http://localhost:7860/verificar_rosto', {
+      const verifyResponse = await fetch('https://thiago2005-ata-facial-api.hf.space/verificar_rosto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imagem_base64: capturedImage }),
@@ -163,7 +163,7 @@ export default function CadastroBiometria() {
         imagem_base64: capturedImage,
       };
 
-      const backendUrl = 'http://localhost:7860/cadastrar_face';
+      const backendUrl = 'https://thiago2005-ata-facial-api.hf.space/cadastrar_face';
       const response = await fetch(backendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
